@@ -16,8 +16,7 @@ application = ProtocolTypeRouter({
     'websocket': #AllowedHostsOriginValidator(
         URLRouter(
             [
-                re_path(r'ws/quidem/(\d+)/$', consumers.QuidemConsumer),
+                re_path(r'ws/quidem/.+/$', consumers.QuidemConsumer),
             ]
         )
-    #)
 })

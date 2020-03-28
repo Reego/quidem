@@ -41,16 +41,12 @@ class TestQuidem:
             'user_visibility': False,
             'voting_algorithm': False,
             'allow_user_nomination': False,
-            'allow_user_self_vote': False,
-            'anti_vote_penalty': False,
             'extra_field': True
         }
 
         state_user = quidem.get_state()
 
-        assert 'anti_vote_penalty' in quidem.settings
         assert 'voting_algorithm' in quidem.settings
-        assert 'anti_vote_penalty' not in state_user['settings']
         assert 'voting_algorithm' not in state_user['settings']
         assert 'extra_field' in state_user['settings']
 
@@ -75,8 +71,6 @@ class TestQuidem:
             'user_visibility': False,
             'voting_algorithm': False,
             'allow_user_nomination': False,
-            'allow_user_self_vote': False,
-            'anti_vote_penalty': False,
             'extra_field': True
         }
 
@@ -85,7 +79,7 @@ class TestQuidem:
         assert state_author['settings'] == quidem.settings
         assert 'nominations' in state_author
         assert state_author['users'] == quidem._consumers
-        assert state_author['phase'] == quidem.phase
+        assert state_author['phase'] == quidem.phase.value
 
     # finished
     def test_get_nominations(self, quidem):

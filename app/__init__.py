@@ -1,1 +1,1 @@
-# default_app_config = 'apps.py'
+# default_app_config = 'cache_setup.py'

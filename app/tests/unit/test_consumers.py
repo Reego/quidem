@@ -60,7 +60,7 @@ class TestQuidemConsumer:
         async def inner(quidem_session_id = Quidem.INITIAL_SESSION_ID, nickname = 'anonymous'):
             communicator = WebsocketCommunicator(
                 application,
-                f'ws/quidem/{quidem_session_id}/',
+                f'ws/quidem/{quidem_session_id}&1002/',
                 headers=[(
                     b'cookie',
                     f'nickname={nickname}'.encode('ascii')
@@ -153,7 +153,7 @@ class TestQuidemConsumer:
         await author.receive_nothing()
 
         assert not call_obj_next_phase.called
-        assert not call_obj_broadcast_updated_state.called
+        assert call_obj_broadcast_updated_state.called
         assert not call_obj_send_disconnect.called
 
         await author.disconnect()

@@ -4,11 +4,6 @@ import math
 
 # Represents a session instance
 
-class UserVisibility(Enum):
-    visible_to_all = 1
-    visible_to_author = 2
-    anonymous = 3
-
 class VotingAlgorithm(Enum):
 
     @staticmethod
@@ -41,7 +36,7 @@ class VotingAlgorithm(Enum):
             cls.flogarithmic
         ]
 
-        return algorithms[voting_algorithm.value]
+        return algorithms[voting_algorithm]
 
     linear = 0
     square = 1
@@ -49,12 +44,10 @@ class VotingAlgorithm(Enum):
     exponential = 3
     logarithmic = 4
 
+
 # Quidem configuration:
 ## user_visibility - dictates whether the other users in the party, or just the author, or neither may see the name of the users. If set to anonymous, users are not prompted for a username
 ## voting_algorithm - different voting algorithms that give different voting power to specific rank positions
-## user_nominations_cap - limit to how many nominatinos a user can make
-## allow_user_self_vote - whether or not the user may vote for his/her own nomination - not counted for author if user_nominations_cap is set to 0
-## anti-vote_penalty - Penalty the user can enact on other nominations - min value of 0
 
 # all settings are flexible and may be changed thru the author dashboard
 
@@ -86,6 +79,7 @@ class Action(Enum):
     REMOVE_NOMINATION = 5
     NEXT_PHASE = 6
     CLOSE_SESSION = 7
+    CHANGE_SETTING = 8
 
 class QuidemError(Exception):
     pass
@@ -114,13 +108,10 @@ class Quidem():
 
     def __init__(self, quidem_id = 0, settings={}):
 
-        self.settings = {
-            'user_visibility': settings.get('user_visibility') or UserVisibility.anonymous,
-            'voting_algorithm': settings.get('voting_algorithm') or VotingAlgorithm.linear,
-            'allow_user_nomination': settings.get('allow_user_nomination') or True,
-            'allow_user_self_vote': settings.get('allow_user_self_vote') or False,
-            'anti_vote_penalty': settings.get('anti_vote_penalty') or -1,
-            'max_voting_slots': settings.get('max_voting_slots') or -1
+        self.settings = { ### change settings
+            'voting_algorithm': settings.get('voting_algorithm') or VotingAlgorithm.linear.value,
+            'max_voting_slots': settings.get('max_voting_slots') or 3,
+            'question': 'question'
         }
 
         self.quidem_id = quidem_id
@@ -132,9 +123,15 @@ class Quidem():
 
         self._votes = {}
 
+        self._calculated_votes = []
+
         self._consumers = {} # dictionary of all consumer_id linked to their respective nicknames
 
         self._consumer_index = 0 # tracks consumer id so each consumer can have a unique id
+
+    @property
+    def consumers(self):
+        return self.consumers
 
     # unsure whether to keep this or not
     def get_state(self, is_author=False):
@@ -145,13 +142,16 @@ class Quidem():
 
     def _get_state_user(self):
         settings = dict(self.settings)
-        del settings['anti_vote_penalty']
+        print(settings)
         del settings['voting_algorithm']
         state = {
             'settings': settings,
-            'phase': self.phase
+            'users': self._consumers,
+            'phase': self.phase.value,
+            'votes': self._votes,
+            'calculated_votes': self._calculated_votes
         }
-        if self.phase is Phase.VOTING:
+        if self.phase.value <= Phase.VOTING.value:
             state['nominations'] = self._get_nominations()
         return state
 
@@ -160,8 +160,9 @@ class Quidem():
             'nominations': self._get_nominations(),
             'users': self._consumers,
             'settings': self.settings,
-            'phase': self.phase,
-            'votes': self._votes
+            'phase': self.phase.value,
+            'votes': self._votes,
+            'calculated_votes': self._calculated_votes
         }
         return state
 
@@ -196,23 +197,22 @@ class Quidem():
             raise QuidemError('The given consumer ID is invalid')
 
         # Remove user
-        if action == Action.REMOVE_USER:
+        if action == Action.REMOVE_USER.value:
             if consumer_id == target_consumer_id or (consumer_id == Quidem.AUTHOR and target_consumer_id != Quidem.AUTHOR):
                 return self.remove_consumer(target_consumer_id)
             else:
                 raise ConsumerIdMismatchException(target_consumer_id, consumer_id)
 
         # Vote
-        elif action == Action.VOTE:
-            nomination_id = body.get('nomination_id')
+        elif action == Action.VOTE.value:
             vote_set = body.get('vote_set')
-            return self.vote(consumer_id, nomination_id, vote_set)
+            return self.vote(consumer_id, vote_set)
 
         # Nominate
         elif consumer_id == target_consumer_id:
-            if action == Action.NOMINATE:
+            if action == Action.NOMINATE.value:
                 return self.nominate(target_consumer_id, body.get('nomination'))
-            elif action == Action.REMOVE_NOMINATION:
+            elif action == Action.REMOVE_NOMINATION.value:
                 return self.remove_nomination(-consumer_id if consumer_id != Quidem.AUTHOR else body.get('nomination_id'))
             else:
                 raise ActionError('Action ' + str(action) + ' does not exist')
@@ -231,8 +231,8 @@ class Quidem():
         return self._consumer_index
 
     def force_remove_consumer(self, consumer_id):
-        if consumer_id != Quidem.AUTHOR:
-            if self.phase.value >= Phase.VOTING.value:
+        if consumer_id != Quidem.AUTHOR and consumer_id in self._consumers:
+            if self.phase.value < Phase.VOTING.value:
                 self.remove_nomination(-consumer_id)
             del self._consumers[consumer_id]
 
@@ -248,13 +248,27 @@ class Quidem():
         return False
 
     # 'nomination_id' and 'vote_set' in body
-    def vote(self, consumer_id, nomination_id, vote_set):
+    def vote(self, consumer_id, vote_set):
         if self.phase != Phase.VOTING:
             raise ActionPhaseException('Voting can only be performed during VOTING phase')
-        elif nomination_id is None or vote_set is None:
+        elif vote_set is None:
             raise ActionError('Vote body arguments cannot be None')
-        self._votes[consumer_id] = vote_set
-        return True
+        if isinstance(vote_set, list):
+            fitted_vote_set = vote_set
+            print('max voting slots')
+            print(self.settings)
+            if len(fitted_vote_set) > self.settings['max_voting_slots']:
+                fitted_vote_set = fitted_vote_set[0:self.settings['max_voting_slots']]
+            self._votes[consumer_id] = fitted_vote_set
+            return True
+        return False
+
+    # returns the vote_set belonging to the consumer_id
+    def get_vote(self, consumer_id):
+        return self._votes.get(consumer_id)
+
+    def get_nickname(self, consumer_id):
+        return self._consumers.get(consumer_id)
 
     # 'nomination' in body
     def nominate(self, consumer_id, nomination):
@@ -289,9 +303,45 @@ class Quidem():
         # end quidem
         if self.phase is not Phase.CLOSED:
             self._phase = Phase(self._phase.value + 1)
+            if self._phase is Phase.CLOSED:
+                self.calculate_votes()
         else:
             raise QuidemError('Phase already set to Phase.CLOSED')
 
+    def calculate_votes(self):
+
+        nominations = self._user_nominations
+
+        for key in nominations.keys():
+            nominations[key] = {
+                'nomination': nominations[key],
+                'nomination_id': key,
+                'votes': 0
+            }
+
+        for i in range(len(self._author_nominations)):
+            nominations[i] = {
+                'nomination': self._author_nominations[i],
+                'nomination_id': i,
+                'votes': 0
+            }
+
+        out_of = min(len(nominations.items()), self.settings['max_voting_slots'])
+
+        voting_algorithm = VotingAlgorithm.get_algorithm(self.settings['voting_algorithm'])
+
+        for consumer_id, vote_set in self._votes.items():
+            print('VOTE SET')
+            print(vote_set)
+            for i in range(len(vote_set)):
+                nomination_id = int(vote_set[i])
+                if nomination_id not in nominations:
+                    continue
+                calculated_points = voting_algorithm(out_of - i)
+                nominations[nomination_id]['votes'] += calculated_points
+
+        self._calculated_votes = sorted(nominations.values(), key=lambda item: -item['votes'])
+        print(self._calculated_votes)
 
     def force_close(self):
         self._phase = Phase.CLOSED
